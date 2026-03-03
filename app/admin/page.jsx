@@ -10,12 +10,16 @@ import {
 import { db } from "@/lib/firebase";
 import { logoutUser } from "@/lib/auth";
 import { useRouter } from "next/navigation";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
-export default function AdminDashboard() {
+function AdminDashboardContent() {
   const router = useRouter();
   const [users, setUsers] = useState([]);
   const [filter, setFilter] = useState("all");
 
+  /* ===============================
+     FETCH USERS (REALTIME)
+  ================================ */
   useEffect(() => {
     const unsubscribe = onSnapshot(
       collection(db, "users"),
@@ -31,6 +35,9 @@ export default function AdminDashboard() {
     return () => unsubscribe();
   }, []);
 
+  /* ===============================
+     ACTIONS
+  ================================ */
   const approveDelivery = async (id) => {
     await updateDoc(doc(db, "users", id), {
       approved: true,
@@ -55,11 +62,17 @@ export default function AdminDashboard() {
     router.push("/login");
   };
 
+  /* ===============================
+     FILTER
+  ================================ */
   const filteredUsers =
     filter === "all"
       ? users
       : users.filter((u) => u.role === filter);
 
+  /* ===============================
+     UI
+  ================================ */
   return (
     <div className="min-h-screen bg-gray-50 p-10">
       <div className="max-w-6xl mx-auto">
@@ -69,6 +82,7 @@ export default function AdminDashboard() {
           <h1 className="text-3xl font-semibold">
             Admin Dashboard
           </h1>
+
           <button
             onClick={handleLogout}
             className="bg-black text-white px-4 py-2 rounded-lg"
@@ -110,10 +124,7 @@ export default function AdminDashboard() {
 
             <tbody>
               {filteredUsers.map((user) => (
-                <tr
-                  key={user.id}
-                  className="border-t text-sm"
-                >
+                <tr key={user.id} className="border-t text-sm">
                   <td className="p-4 font-medium">
                     {user.name}
                   </td>
@@ -190,5 +201,16 @@ export default function AdminDashboard() {
 
       </div>
     </div>
+  );
+}
+
+/* ===============================
+   WRAPPER WITH ROLE PROTECTION
+================================ */
+export default function AdminDashboard() {
+  return (
+    <ProtectedRoute allowedRole="admin">
+      <AdminDashboardContent />
+    </ProtectedRoute>
   );
 }
