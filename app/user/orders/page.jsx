@@ -18,56 +18,78 @@ const TrackingMap = dynamic(
 
 export default function UserOrdersPage() {
   const [orders, setOrders] = useState([]);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(undefined);
   const [loading, setLoading] = useState(true);
 
-  /* ===============================
+  /* ==========================
      WAIT FOR AUTH PROPERLY
-  ================================ */
+  =========================== */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+      setUser(u || null);
     });
 
     return () => unsub();
   }, []);
 
-  /* ===============================
-     FETCH USER ORDERS (NO INDEX)
-  ================================ */
+  /* ==========================
+     FETCH USER ORDERS SAFELY
+  =========================== */
   useEffect(() => {
-    if (!user) return;
+    if (user === undefined) return; // still checking auth
+
+    if (user === null) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
 
     const q = query(
       collection(db, "orders"),
       where("userId", "==", user.uid)
     );
 
-    const unsub = onSnapshot(q, (snap) => {
-      let data = snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        let data = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
 
-      // 🔥 MANUAL SORT (Latest First)
-      data.sort((a, b) => {
-        if (!a.createdAt || !b.createdAt) return 0;
-        return (
-          b.createdAt.seconds - a.createdAt.seconds
+        // SAFE SORT (Latest First)
+        data.sort(
+          (a, b) =>
+            (b.createdAt?.seconds || 0) -
+            (a.createdAt?.seconds || 0)
         );
-      });
 
-      setOrders(data);
-      setLoading(false);
-    });
+        setOrders(data);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Orders listener error:", err);
+        setLoading(false);
+      }
+    );
 
     return () => unsub();
   }, [user]);
 
+  /* ==========================
+     LOADING STATE
+  =========================== */
   if (loading) {
-    return <div className="p-10">Loading...</div>;
+    return (
+      <div className="p-10 text-gray-500">
+        Loading...
+      </div>
+    );
   }
 
+  /* ==========================
+     MAIN UI
+  =========================== */
   return (
     <div className="min-h-screen bg-gray-50 p-10">
       <div className="max-w-6xl mx-auto">
@@ -77,58 +99,91 @@ export default function UserOrdersPage() {
         </h1>
 
         {orders.length === 0 && (
-          <div>No orders found.</div>
+          <div className="text-gray-500">
+            No orders found.
+          </div>
         )}
 
-        {orders.map((order) => (
-          <div
-            key={order.id}
-            className="bg-white p-6 rounded-xl shadow mb-8"
-          >
-            {/* HEADER */}
-            <div className="flex justify-between mb-4">
-              <span className="text-sm text-gray-500">
-                Order ID: {order.id}
-              </span>
+        {orders.map((order) => {
+          const isOutForDelivery =
+            order.status
+              ?.toLowerCase()
+              .includes("out_for_delivery") ||
+            order.status
+              ?.toLowerCase()
+              .includes("out");
 
-              <span className="capitalize font-medium">
-                {order.status?.replaceAll("_", " ")}
-              </span>
+          return (
+            <div
+              key={order.id}
+              className="bg-white p-6 rounded-xl shadow mb-8"
+            >
+              {/* HEADER */}
+              <div className="flex justify-between mb-4">
+                <span className="text-sm text-gray-500">
+                  Order ID: {order.id}
+                </span>
+
+                <span className="capitalize font-medium">
+                  {order.status?.replaceAll(
+                    "_",
+                    " "
+                  )}
+                </span>
+              </div>
+
+              {/* ITEMS */}
+              <div className="space-y-1">
+                {order.items?.map((item, i) => (
+                  <div key={i}>
+                    {item.name} x {item.quantity}
+                  </div>
+                ))}
+              </div>
+
+              {/* TOTAL */}
+              <div className="mt-3 font-semibold">
+                Total: ₹ {order.totalAmount}
+              </div>
+
+              {/* ==========================
+                 LIVE TRACKING SECTION
+              =========================== */}
+              {isOutForDelivery &&
+                order.deliveryLocation?.lat &&
+                order.deliveryDetails?.lat && (
+                  <div className="mt-6">
+                    <h3 className="font-medium mb-2">
+                      Live Tracking
+                    </h3>
+
+                    <TrackingMap
+                      userLat={
+                        Number(
+                          order.deliveryDetails.lat
+                        )
+                      }
+                      userLng={
+                        Number(
+                          order.deliveryDetails.lng
+                        )
+                      }
+                      deliveryLat={
+                        Number(
+                          order.deliveryLocation.lat
+                        )
+                      }
+                      deliveryLng={
+                        Number(
+                          order.deliveryLocation.lng
+                        )
+                      }
+                    />
+                  </div>
+                )}
             </div>
-
-            {/* ITEMS */}
-            <div className="space-y-1">
-              {order.items?.map((item, i) => (
-                <div key={i}>
-                  {item.name} x {item.quantity}
-                </div>
-              ))}
-            </div>
-
-            {/* TOTAL */}
-            <div className="mt-3 font-semibold">
-              Total: ₹ {order.totalAmount}
-            </div>
-
-            {/* LIVE TRACKING */}
-            {order.status === "out_for_delivery" &&
-              order.deliveryLocation?.lat &&
-              order.deliveryDetails?.lat && (
-                <div className="mt-6">
-                  <h3 className="font-medium mb-2">
-                    Live Tracking
-                  </h3>
-
-                  <TrackingMap
-                    userLat={order.deliveryDetails.lat}
-                    userLng={order.deliveryDetails.lng}
-                    deliveryLat={order.deliveryLocation.lat}
-                    deliveryLng={order.deliveryLocation.lng}
-                  />
-                </div>
-              )}
-          </div>
-        ))}
+          );
+        })}
 
       </div>
     </div>
