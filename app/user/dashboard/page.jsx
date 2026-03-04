@@ -10,21 +10,23 @@ export default function UserDashboard() {
   const router = useRouter();
   const [userData, setUserData] = useState(null);
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      if (!auth.currentUser) return;
+useEffect(() => {
 
-      const snap = await getDoc(
-        doc(db, "users", auth.currentUser.uid)
-      );
+  const unsubscribe = auth.onAuthStateChanged(async (user) => {
 
-      if (snap.exists()) {
-        setUserData(snap.data());
-      }
-    };
+    if (!user) return;
 
-    fetchUser();
-  }, []);
+    const snap = await getDoc(doc(db, "users", user.uid));
+
+    if (snap.exists()) {
+      setUserData(snap.data());
+    }
+
+  });
+
+  return () => unsubscribe();
+
+}, []);
 
   const handleLogout = async () => {
     await logoutUser();

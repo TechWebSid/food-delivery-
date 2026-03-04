@@ -13,6 +13,7 @@ import {
 
 import { db, auth } from "@/lib/firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
+import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 
@@ -26,8 +27,47 @@ export default function DeliveryPage() {
   const [orders, setOrders] = useState([]);
   const [availableOrders, setAvailableOrders] = useState([]);
   const [user, setUser] = useState(undefined);
+  const [soundEnabled, setSoundEnabled] = useState(false);
 
   const router = useRouter();
+
+  const orderSound =
+    typeof window !== "undefined" ? new Audio("/order.mp3") : null;
+
+  /* ===============================
+     ENABLE SOUND AFTER USER CLICK
+  ================================ */
+
+  useEffect(() => {
+
+    const unlockSound = () => {
+      setSoundEnabled(true);
+    };
+
+    window.addEventListener("click", unlockSound, { once: true });
+
+    return () => {
+      window.removeEventListener("click", unlockSound);
+    };
+
+  }, []);
+
+  /* ===============================
+     SERVICE WORKER REGISTER
+  ================================ */
+
+  useEffect(() => {
+
+    if ("serviceWorker" in navigator) {
+
+      navigator.serviceWorker
+        .register("/firebase-messaging-sw.js")
+        .then((reg) => console.log("SW registered", reg))
+        .catch((err) => console.log("SW error", err));
+
+    }
+
+  }, []);
 
   /* ===============================
      WAIT FOR AUTH
@@ -53,6 +93,53 @@ export default function DeliveryPage() {
   };
 
   /* ===============================
+     PUSH NOTIFICATION SETUP
+  ================================ */
+
+  useEffect(() => {
+
+    if (!user) return;
+
+    const setupNotification = async () => {
+
+      const permission = await Notification.requestPermission();
+
+      if (permission !== "granted") return;
+
+      const messaging = getMessaging();
+
+      try {
+
+        const token = await getToken(messaging, {
+          vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+        });
+
+        console.log("FCM TOKEN:", token);
+
+      } catch (err) {
+        console.log("Token error", err);
+      }
+
+      onMessage(messaging, (payload) => {
+
+        if (orderSound && soundEnabled) {
+          orderSound.play().catch(() => {});
+        }
+
+        new Notification(payload.notification.title, {
+          body: payload.notification.body,
+          icon: "/logo.png",
+        });
+
+      });
+
+    };
+
+    setupNotification();
+
+  }, [user, soundEnabled]);
+
+  /* ===============================
      FETCH AVAILABLE ORDERS
   ================================ */
 
@@ -71,13 +158,30 @@ export default function DeliveryPage() {
         ...d.data(),
       }));
 
+      if (data.length > availableOrders.length) {
+
+        if (orderSound && soundEnabled) {
+          orderSound.play().catch(() => {});
+        }
+
+        if (Notification.permission === "granted") {
+
+          new Notification("New Delivery Order", {
+            body: "Tap to accept the order",
+            icon: "/logo.png",
+          });
+
+        }
+
+      }
+
       setAvailableOrders(data);
 
     });
 
     return () => unsub();
 
-  }, []);
+  }, [availableOrders, soundEnabled]);
 
   /* ===============================
      FETCH ACTIVE DELIVERY
