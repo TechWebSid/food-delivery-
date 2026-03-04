@@ -95,55 +95,95 @@ export default function OrderPage() {
     );
   };
 
-  const placeOrder = async () => {
-    if (cart.length === 0)
-      return alert("Cart empty");
+ const placeOrder = async () => {
 
-    // 🔥 Landmark Required Now
-    if (
-      !address.fullName ||
-      !address.phone ||
-      !address.addressLine ||
-      !address.landmark
-    )
-      return alert(
-        "Please fill all required fields including landmark"
-      );
+  if (cart.length === 0)
+    return alert("Cart empty");
 
-    try {
-      setLoading(true);
+  if (
+    !address.fullName ||
+    !address.phone ||
+    !address.addressLine ||
+    !address.landmark
+  )
+    return alert("Fill all required fields");
 
-      await updateDoc(
-        doc(db, "users", auth.currentUser.uid),
-        { address }
-      );
+  try {
 
-      await addDoc(collection(db, "orders"), {
-        userId: auth.currentUser.uid,
-        items: cart.map((item) => ({
-          productId: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-        })),
-        totalAmount,
-        status: "pending",
-        assignedTo: null,
-        paymentMethod: "COD",
-        paymentStatus: "paid",
-        deliveryDetails: address,
-        createdAt: serverTimestamp(),
-      });
+    setLoading(true);
 
-      clearCart();
-      router.push("/user/order-success");
+    // create razorpay order
+    const res = await fetch("/api/razorpay", {
+      method: "POST",
+      body: JSON.stringify({ amount: totalAmount }),
+    });
 
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const data = await res.json();
+
+    const options = {
+      key: "rzp_test_SN8KH9tvKTS5Gt",
+      amount: data.amount,
+      currency: "INR",
+      name: "Brotherhood Restaurant",
+      description: "Food Order Payment",
+      order_id: data.id,
+
+      handler: async function (response) {
+
+        await updateDoc(
+          doc(db, "users", auth.currentUser.uid),
+          { address }
+        );
+
+        await addDoc(collection(db, "orders"), {
+          userId: auth.currentUser.uid,
+          items: cart.map((item) => ({
+            productId: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+          })),
+          totalAmount,
+          status: "pending",
+          assignedTo: null,
+          paymentMethod: "Razorpay",
+          paymentStatus: "paid",
+          razorpayPaymentId: response.razorpay_payment_id,
+          deliveryDetails: address,
+          createdAt: serverTimestamp(),
+        });
+
+        clearCart();
+
+        router.push("/user/order-success");
+
+      },
+
+      prefill: {
+        name: address.fullName,
+        contact: address.phone,
+      },
+
+      theme: {
+        color: "#16a34a",
+      },
+    };
+
+    const razor = new window.Razorpay(options);
+
+    razor.open();
+
+  } catch (err) {
+
+    alert(err.message);
+
+  } finally {
+
+    setLoading(false);
+
+  }
+
+};
 
   return (
     <div className="min-h-screen bg-gray-50 p-10">

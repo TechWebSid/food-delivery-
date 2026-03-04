@@ -13,7 +13,6 @@ import {
 
 import { db, auth } from "@/lib/firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
-import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 
@@ -24,50 +23,11 @@ const TrackingMap = dynamic(
 
 export default function DeliveryPage() {
 
+  const router = useRouter();
+
   const [orders, setOrders] = useState([]);
   const [availableOrders, setAvailableOrders] = useState([]);
   const [user, setUser] = useState(undefined);
-  const [soundEnabled, setSoundEnabled] = useState(false);
-
-  const router = useRouter();
-
-  const orderSound =
-    typeof window !== "undefined" ? new Audio("/order.mp3") : null;
-
-  /* ===============================
-     ENABLE SOUND AFTER USER CLICK
-  ================================ */
-
-  useEffect(() => {
-
-    const unlockSound = () => {
-      setSoundEnabled(true);
-    };
-
-    window.addEventListener("click", unlockSound, { once: true });
-
-    return () => {
-      window.removeEventListener("click", unlockSound);
-    };
-
-  }, []);
-
-  /* ===============================
-     SERVICE WORKER REGISTER
-  ================================ */
-
-  useEffect(() => {
-
-    if ("serviceWorker" in navigator) {
-
-      navigator.serviceWorker
-        .register("/firebase-messaging-sw.js")
-        .then((reg) => console.log("SW registered", reg))
-        .catch((err) => console.log("SW error", err));
-
-    }
-
-  }, []);
 
   /* ===============================
      WAIT FOR AUTH
@@ -84,60 +44,27 @@ export default function DeliveryPage() {
   }, []);
 
   /* ===============================
-     LOGOUT
-  ================================ */
-
-  const handleLogout = async () => {
-    await signOut(auth);
-    router.push("/login");
-  };
-
-  /* ===============================
-     PUSH NOTIFICATION SETUP
+     REDIRECT IF LOGGED OUT
   ================================ */
 
   useEffect(() => {
 
-    if (!user) return;
+    if (user === null) {
+      router.push("/login");
+    }
 
-    const setupNotification = async () => {
+  }, [user, router]);
 
-      const permission = await Notification.requestPermission();
+  /* ===============================
+     LOGOUT
+  ================================ */
 
-      if (permission !== "granted") return;
+  const handleLogout = async () => {
 
-      const messaging = getMessaging();
+    await signOut(auth);
+    router.push("/login");
 
-      try {
-
-        const token = await getToken(messaging, {
-          vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
-        });
-
-        console.log("FCM TOKEN:", token);
-
-      } catch (err) {
-        console.log("Token error", err);
-      }
-
-      onMessage(messaging, (payload) => {
-
-        if (orderSound && soundEnabled) {
-          orderSound.play().catch(() => {});
-        }
-
-        new Notification(payload.notification.title, {
-          body: payload.notification.body,
-          icon: "/logo.png",
-        });
-
-      });
-
-    };
-
-    setupNotification();
-
-  }, [user, soundEnabled]);
+  };
 
   /* ===============================
      FETCH AVAILABLE ORDERS
@@ -158,30 +85,13 @@ export default function DeliveryPage() {
         ...d.data(),
       }));
 
-      if (data.length > availableOrders.length) {
-
-        if (orderSound && soundEnabled) {
-          orderSound.play().catch(() => {});
-        }
-
-        if (Notification.permission === "granted") {
-
-          new Notification("New Delivery Order", {
-            body: "Tap to accept the order",
-            icon: "/logo.png",
-          });
-
-        }
-
-      }
-
       setAvailableOrders(data);
 
     });
 
     return () => unsub();
 
-  }, [availableOrders, soundEnabled]);
+  }, []);
 
   /* ===============================
      FETCH ACTIVE DELIVERY
@@ -247,7 +157,7 @@ export default function DeliveryPage() {
   };
 
   /* ===============================
-     LIVE LOCATION
+     LIVE LOCATION TRACKING
   ================================ */
 
   useEffect(() => {
@@ -292,6 +202,7 @@ export default function DeliveryPage() {
   }
 
   return (
+
     <div className="p-10">
 
       <div className="flex justify-between mb-6">
@@ -382,5 +293,7 @@ export default function DeliveryPage() {
       ))}
 
     </div>
+
   );
+
 }
